@@ -11,7 +11,7 @@ function MasterComponent() {
   const [showWebcam, setShowWebcam] = useState(true);
   const [showImg, setShowImg] = useState(false);
 
-  function register_new_user_ok(text,userType) {
+  function register_new_user_ok(text,usertype) {
     if (lastFrame) {
       const apiUrl = API_BASE_URL + "register/";
       console.log(typeof lastFrame);
@@ -25,7 +25,7 @@ function MasterComponent() {
           const formData = new FormData();
           formData.append("file", file);
           formData.append("text", text);
-          formData.append("userType", userType);
+          formData.append("usertype", usertype);
 
           axios
             .post(apiUrl, formData, {
@@ -261,6 +261,8 @@ function Buttons({
   const [zIndexAdmin, setZIndexAdmin] = useState(1);
   const [zIndexRegistering, setZIndexRegistering] = useState(1);
 
+
+
   const changeZIndexAdmin = (newZIndex) => {
     setZIndexAdmin(newZIndex);
   };
@@ -277,6 +279,25 @@ function Buttons({
 
   const resetTextBox = () => {
     setValue("");
+  };
+
+  const handleAdminButtonClick = async () => {
+    try {
+      const response = await axios.get(API_BASE_URL + "fetch_role/");
+      const data = response.data;
+  
+      if (data.current_user.role === 'student') {
+        alert("You can't access the admin interface. You need to be an admin.");
+      } else {
+        setIsAdmin(true);
+        setIsRegistering(false);
+        changeZIndexAdmin(3);
+        changeZIndexRegistering(1);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      // Handle the error condition, e.g., display an error message to the user
+    }
   };
 
   return (
@@ -376,13 +397,7 @@ function Buttons({
           className={`${
             isAdmin || isRegistering ? "hidden" : "visible"
           } admin-button`}
-          onClick={() => {
-            setIsAdmin(true);
-            setIsRegistering(false);
-
-            changeZIndexAdmin(3);
-            changeZIndexRegistering(1);
-          }}
+          onClick={handleAdminButtonClick}
         ></button>
       </div>
       

@@ -1,9 +1,9 @@
 import os
 import uuid
 import pickle
-import shutil
 import face_recognition
 import numpy as np
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 
 from django.http import HttpResponse
@@ -12,7 +12,7 @@ import cv2
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .serializer import RegisterUserSerializer,LoginSerializer
+from .serializer import RegisterUserSerializer,LoginSerializer,fetchmodelSerializer
 from rest_framework import status
 from scipy.spatial.distance import euclidean
 import pandas as pd
@@ -96,9 +96,22 @@ def register_new_user(request):
     else:
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['get'])
+@csrf_exempt
+def fetchROLE(request):
+    try:
+        current_user_name = AttendanceLog.objects.last().user
+        print(current_user_name)
+        current_user = RegisteredUser.objects.get(name=current_user_name)
+        fetching_status = "Success"  # Example success status
+        # Serialize the RegisteredUser object
+        serializer = fetchmodelSerializer(current_user)
+        serialized_user = serializer.data
 
-
-import pandas as pd
+        return Response({'fetching_status': fetching_status, 'current_user': serialized_user})
+    except Exception as e:
+        error_message = str(e)  # Get the error message
+        return Response({'error_message': error_message}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 def get_attendance_logs(request):
