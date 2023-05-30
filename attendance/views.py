@@ -4,7 +4,6 @@ import pickle
 import shutil
 import face_recognition
 import numpy as np
-import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 from django.http import HttpResponse
@@ -15,6 +14,9 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .serializer import RegisterUserSerializer,LoginSerializer
 from rest_framework import status
+from scipy.spatial.distance import euclidean
+import pandas as pd
+
 
 from .models import AttendanceLog, RegisteredUser
 
@@ -28,14 +30,14 @@ def login(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         file = serializer.validated_data['file']
-        name= serializer.validated_data['text']
+
         file.name = f"{uuid.uuid4()}.png"
 
         image_path = os.path.join(MEDIA_ROOT, file.name)
         with open(image_path, "wb") as f:
             f.write(file.read())
 
-        user_name, match_status = recognize(face_recognition.load_image_file(image_path),name)
+        user_name, match_status = recognize(face_recognition.load_image_file(image_path))
 
         if match_status:
             attendance_log = AttendanceLog(user=user_name, status='IN')
@@ -54,17 +56,17 @@ def logout(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         file = serializer.validated_data['file']
-        name= serializer.validated_data['text']
+       
         file.name = f"{uuid.uuid4()}.png"
 
         image_path = os.path.join(MEDIA_ROOT, file.name)
         with open(image_path, "wb") as f:
             f.write(file.read())
 
-        user_name, match_status = recognize(face_recognition.load_image_file(image_path),name)
+        user_name, match_status = recognize(face_recognition.load_image_file(image_path))
 
         if match_status:
-            attendance_log = AttendanceLog(user=user_name, status='IN')
+            attendance_log = AttendanceLog(user=user_name, status='OUT')
             attendance_log.save()
 
         os.remove(image_path)
@@ -96,20 +98,37 @@ def register_new_user(request):
 
 
 
+import pandas as pd
+
 @api_view(['GET'])
 def get_attendance_logs(request):
-    filename = 'out.zip'
-    logs_directory = os.path.join(MEDIA_ROOT, 'logs')
+    logs = AttendanceLog.objects.all()
 
-    shutil.make_archive(filename[:-4], 'zip', logs_directory)
+    # Create a DataFrame from the AttendanceLog objects
+    data = {
+        'User': [log.user for log in logs],
+        'Status': [log.status for log in logs],
+    }
+    df = pd.DataFrame(data)
 
-    with open(filename, 'rb') as f:
-        response = HttpResponse(f, content_type='application/zip')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    # Convert the DataFrame to Excel
+    excel_file = 'attendance_logs.xlsx'
+    df.to_excel(excel_file, index=False)
+
+    # Serve the Excel file as a download
+    with open(excel_file, 'rb') as f:
+        response = HttpResponse(f, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="{excel_file}"'
         return response
 
+    
 
-def recognize(img,name):
+def compare_faces(face1, face2):
+    distance = euclidean(face1, face2)
+    similarity_score = 1 / (1 + distance)
+    return distance,similarity_score
+
+def recognize(img):
     # Assume there will be at most 1 match in the database
 
     embeddings_unknown = face_recognition.face_encodings(img)
@@ -120,30 +139,29 @@ def recognize(img,name):
         print("UNknown-user-embedings",embeddings_unknown)
 
 
-    registered_user = RegisteredUser.objects.get(name=name)
-    embeddings = pickle.loads(registered_user.embeddings)
-    embeddings = np.array(embeddings)  # Convert to NumPy array
-    print("known-user-embedings",embeddings)
+    registered_users = RegisteredUser.objects.all()
+    best_score = 0
+    best_user = None
+    
 
-    # Normalize embeddings
-    known_embedding = embeddings / np.linalg.norm(embeddings)
-    unknown_embedding = embeddings_unknown / np.linalg.norm(embeddings_unknown)
+    for registered_user in registered_users:
+        embeddings = pickle.loads(registered_user.embeddings)
+        embeddings = np.array(embeddings)  # Convert to NumPy array
+        embeddings = embeddings.reshape(-1)
 
-    # Reshape embeddings to 2D arrays
-    # Reshape embeddings to 1D arrays
-    known_embedding = known_embedding.reshape(-1)
-    unknown_embedding = unknown_embedding.reshape(-1)
-    print("Resahped_known-user-embedings",known_embedding)
-    print("reshaped_UNknown-user-embedings",unknown_embedding)
+        distance, similarity_score = compare_faces(embeddings, embeddings_unknown)
 
-    threshold = 0.  # Adjust the threshold based on your requirements
+        print(f"The similarity score for user {registered_user.name} is: {similarity_score}")
 
-    # Compute cosine similarity
-    similarity = cosine_similarity([known_embedding], [unknown_embedding])
-    print(similarity)
+        if similarity_score > best_score:
+            best_score = similarity_score
+            best_user=registered_user.name
+            
 
-    if similarity > threshold:
-        return registered_user.name, True
+    threshold = 0.7  # Adjust the threshold based on your requirements
+
+    if best_score > threshold:
+        return best_user, True
 
     return 'unknown_person', False
 
